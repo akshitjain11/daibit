@@ -76,13 +76,13 @@ export function resolveTheme(theme: Theme): Theme {
         theme.accent === "rose" ? "text-rose-500" :
         "text-rose-300";
 
-    const bg = 
-        theme.background === "aurora" ? "bg-gradient-to-b from-pink-50 via-purple-50 to-blue-50" :theme.background === "aurora"
-      ? "bg-[radial-gradient(1000px_600px_at_20%_-10%,rgba(16,185,129,0.30),transparent_60%),radial-gradient(900px_500px_at_100%_0%,rgba(139,92,246,0.25),transparent_55%),radial-gradient(900px_500px_at_60%_110%,rgba(6,182,212,0.18),transparent_55%),linear-gradient(to_bottom,rgba(9,9,11,1),rgba(9,9,11,1))]"
-      : theme.background === "midnight"
-      ? "bg-[radial-gradient(800px_520px_at_20%_0%,rgba(56,189,248,0.20),transparent_55%),radial-gradient(900px_520px_at_100%_20%,rgba(99,102,241,0.18),transparent_55%),linear-gradient(to_bottom,rgba(9,9,11,1),rgba(9,9,11,1))]"
-      : "bg-[linear-gradient(to_bottom,rgba(9,9,11,1),rgba(9,9,11,1))]";
-    
+    const bg =
+        theme.background === "aurora"
+            ? "bg-[radial-gradient(1000px_600px_at_20%_-10%,rgba(16,185,129,0.30),transparent_60%),radial-gradient(900px_500px_at_100%_0%,rgba(139,92,246,0.25),transparent_55%),radial-gradient(900px_500px_at_60%_110%,rgba(6,182,212,0.18),transparent_55%),linear-gradient(to_bottom,rgba(9,9,11,1),rgba(9,9,11,1))]"
+            : theme.background === "midnight"
+            ? "bg-[radial-gradient(800px_520px_at_20%_0%,rgba(56,189,248,0.20),transparent_55%),radial-gradient(900px_520px_at_100%_20%,rgba(99,102,241,0.18),transparent_55%),linear-gradient(to_bottom,rgba(9,9,11,1),rgba(9,9,11,1))]"
+             : "bg-[linear-gradient(to_bottom,rgba(9,9,11,1),rgba(9,9,11,1))]";
+
       const intensity = (count: number) => {
         // 0 is always muted
         if (count === 0) return "bg-white/[0.04]";
@@ -147,5 +147,96 @@ export function saveState(state: any) {
         localStorage.setItem("daibit-state", JSON.stringify(clean));
     } catch {
         // ignore write errors
+    }
+}
+
+export function buildYearGrid(year:number, data:Day[]) {
+    const map = new Map(data.map(d => [d.date, d.count]));
+    const start = new Date(Date.UTC(year,0,1));
+    const end = new Date(Date.UTC(year,11,31));
+    
+    const days:Day[] = []
+    const cur = new Date(start);
+
+    while (cur <= end) {
+        const iso = cur.toISOString().slice(0,10);
+        days.push({date: iso, count: map.get(iso) ?? 0});
+        cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+
+    return days
+}
+
+export function buildWeeks(year: number, yearDays:Day[]) {
+    const first = new Date(Date.UTC(year,0,1));
+    const firtDow = first.getUTCDay();
+
+    const padded:Day[] = [];
+    for (let i=0; i<firtDow; i++) {
+        padded.push({date: `pad-${i}`, count:0});
+    }
+    padded.push(...yearDays);
+
+    while (padded.length % 7 !== 0) {
+        padded.push({date: `pad-end-${padded.length}`, count:0});
+    }
+
+    const columns: Day[][] = [];
+    for (let i = 0; i < padded.length; i += 7) {
+        columns.push(padded.slice(i, i + 7));
+    }
+
+    const monthStarts: Array<{ iso: string }> = [];
+    const seen = new Set<string>();
+    for (let c = 0;c < columns.length; c++) {
+        const col = columns[c];
+        const firstReal = col.find((d) => !d.date.startsWith('pad-'));
+        if (!firstReal) {
+            continue
+        }
+        const m = firstReal.date.slice(0,7);
+        if (!seen.has(m)) {
+            seen.add(m);
+            monthStarts.push({ iso: firstReal.date });
+        }
+    }
+
+        return { columns, monthStarts };
+}
+
+export function formatMonthLabel(iso: string) {
+  const [y, m] = iso.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1, 1));
+  return d.toLocaleString(undefined, { month: "short" });
+}
+
+export function computeStats(grid: Day[]) {
+    const today = isoToday();
+    const map = new Map(grid.map(d => [d.date, d.count]));
+
+    let currentStreak = 0;
+    let cursor = new Date(today + "T00:00:00Z");
+
+    while (true) {
+        const iso = cursor.toISOString().slice(0,10);
+        const c = map.get(iso);
+        if (c && c>0) currentStreak++;
+        else break;
+        cursor.setUTCDate(cursor.getUTCDate() - 1);
+
+        let bestStreak = 0;
+        let run = 0;
+        for (const d of grid) {
+            if (d.count > 0) {
+                run++;
+                bestStreak = Math.max(bestStreak, run);
+            } else {
+                run = 0;
+            }
+
+        }
+        const totalCount = grid.reduce((acc, d) => acc + d.count, 0);
+
+        return { currentStreak, bestStreak, totalCount };
     }
 }
